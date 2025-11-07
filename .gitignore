@@ -1,0 +1,40 @@
+# Projet ALEX - Assistant IA
+# Environnements virtuels Python
+.venv/
+venv/
+ENV/
+env/
+
+# Base de données et cache
+chroma_db/
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+logs/
+
+# Fichiers temporaires
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Documents privés
+backup/
+documents/
+
+# Ne pas inclure les fichiers du système parent
+../../../*

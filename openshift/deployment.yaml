@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alex-deployment
+  labels:
+    app: alex
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alex
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: alex
+        component: backend
+    spec:
+      containers:
+      - name: alex
+        image: alex:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8505
+          name: http
+          protocol: TCP
+        
+        # Variables d'environnement depuis ConfigMap
+        envFrom:
+        - configMapRef:
+            name: alex-config
+        
+        # Ressources allouées
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        
+        # Volumes pour persistance
+        volumeMounts:
+        - name: documents-storage
+          mountPath: /app/documents
+        - name: chroma-storage
+          mountPath: /app/chroma_db
+        - name: logs-storage
+          mountPath: /app/logs
+        
+        # Probes de santé
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8505
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8505
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Graceful shutdown
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]
+      
+      # Volumes persistants
+      volumes:
+      - name: documents-storage
+        persistentVolumeClaim:
+          claimName: alex-documents-pvc
+      - name: chroma-storage
+        persistentVolumeClaim:
+          claimName: alex-chroma-pvc
+      - name: logs-storage
+        emptyDir: {}
+      
+      # Stratégie de redémarrage
+      restartPolicy: Always
+      
+      # Configuration de sécurité
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001

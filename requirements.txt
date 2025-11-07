@@ -1,0 +1,25 @@
+# ALEX Assistant IA - Requirements
+# Core web framework
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# HTTP client with retry capabilities
+requests==2.31.0
+
+# Vector database
+chromadb==0.4.15
+
+# File system monitoring
+watchdog==3.0.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Additional dependencies for production
+gunicorn==21.2.0
+
+# Logging
+colorlog==6.7.0
+
+# System utilities
+psutil==5.9.5

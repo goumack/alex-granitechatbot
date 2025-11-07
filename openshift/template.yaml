@@ -1,0 +1,201 @@
+# ALEX - Assistant IA d'Accel Tech
+# Configuration pour OpenShift
+
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: alex-template
+  annotations:
+    description: "Template pour déployer ALEX Assistant IA sur OpenShift"
+    tags: "ai,rag,chatbot,accel-tech"
+    version: "1.0"
+labels:
+  app: alex
+  version: v1.0
+
+parameters:
+- name: PROJECT_NAME
+  displayName: "Nom du projet"
+  description: "Nom du projet OpenShift"
+  value: "alex-prod"
+  required: true
+
+- name: OLLAMA_BASE_URL
+  displayName: "URL Ollama"
+  description: "URL du service Ollama"
+  value: "https://ollamaaccel-chatbotaccel.apps.senum.heritage.africa"
+  required: true
+
+- name: ALEX_IMAGE
+  displayName: "Image ALEX"
+  description: "Image Docker ALEX"
+  value: "alex:latest"
+  required: true
+
+- name: REPLICAS
+  displayName: "Nombre de réplicas"
+  description: "Nombre d'instances ALEX"
+  value: "1"
+  required: true
+
+- name: MEMORY_LIMIT
+  displayName: "Limite mémoire"
+  description: "Limite mémoire par pod"
+  value: "2Gi"
+  required: true
+
+- name: CPU_LIMIT
+  displayName: "Limite CPU"
+  description: "Limite CPU par pod"
+  value: "1000m"
+  required: true
+
+- name: STORAGE_SIZE_DOCS
+  displayName: "Taille stockage documents"
+  description: "Taille du volume pour documents"
+  value: "2Gi"
+  required: true
+
+- name: STORAGE_SIZE_DB
+  displayName: "Taille stockage base"
+  description: "Taille du volume pour ChromaDB"
+  value: "5Gi"
+  required: true
+
+objects:
+
+# ConfigMap
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: alex-config
+    labels:
+      app: alex
+  data:
+    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+    OLLAMA_CHAT_MODEL: "granite-code:3b"
+    OLLAMA_EMBEDDING_MODEL: "nomic-embed-text"
+    WATCH_DIRECTORY: "./documents"
+    CHROMA_PERSIST_DIRECTORY: "./chroma_db"
+    ALEX_RESPONSE_CACHE_MAX: "500"
+    ALEX_RESPONSE_CACHE_TTL: "3600"
+    ALEX_PERSIST_CACHE: "true"
+    FLASK_ENV: "production"
+    LOG_LEVEL: "INFO"
+
+# PersistentVolumeClaims
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: alex-documents-pvc
+    labels:
+      app: alex
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${STORAGE_SIZE_DOCS}
+
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: alex-chroma-pvc
+    labels:
+      app: alex
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${STORAGE_SIZE_DB}
+
+# Deployment
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: alex-deployment
+    labels:
+      app: alex
+  spec:
+    replicas: ${{REPLICAS}}
+    selector:
+      matchLabels:
+        app: alex
+    template:
+      metadata:
+        labels:
+          app: alex
+      spec:
+        containers:
+        - name: alex
+          image: ${ALEX_IMAGE}
+          ports:
+          - containerPort: 8505
+            name: http
+          envFrom:
+          - configMapRef:
+              name: alex-config
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 250m
+            limits:
+              memory: ${MEMORY_LIMIT}
+              cpu: ${CPU_LIMIT}
+          volumeMounts:
+          - name: documents-storage
+            mountPath: /app/documents
+          - name: chroma-storage
+            mountPath: /app/chroma_db
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8505
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8505
+            initialDelaySeconds: 30
+            periodSeconds: 10
+        volumes:
+        - name: documents-storage
+          persistentVolumeClaim:
+            claimName: alex-documents-pvc
+        - name: chroma-storage
+          persistentVolumeClaim:
+            claimName: alex-chroma-pvc
+
+# Service
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: alex-service
+    labels:
+      app: alex
+  spec:
+    ports:
+    - port: 8505
+      targetPort: 8505
+      name: http
+    selector:
+      app: alex
+
+# Route
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    name: alex-route
+    labels:
+      app: alex
+  spec:
+    to:
+      kind: Service
+      name: alex-service
+    port:
+      targetPort: http
+    tls:
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alex-config
+  labels:
+    app: alex
+    component: config
+data:
+  # Configuration ALEX
+  OLLAMA_BASE_URL: "https://ollamaaccel-chatbotaccel.apps.senum.heritage.africa"
+  OLLAMA_CHAT_MODEL: "granite-code:3b"
+  OLLAMA_EMBEDDING_MODEL: "nomic-embed-text"
+  WATCH_DIRECTORY: "./documents"
+  CHROMA_PERSIST_DIRECTORY: "./chroma_db"
+  
+  # Configuration cache (optionnel)
+  ALEX_RESPONSE_CACHE_MAX: "500"
+  ALEX_RESPONSE_CACHE_TTL: "3600"
+  ALEX_PERSIST_CACHE: "true"
+  ALEX_CACHE_PATH: "./chroma_db/alex_cache.db"
+  ALEX_PERSIST_INTERVAL: "30"
+  
+  # Configuration Flask
+  FLASK_ENV: "production"
+  
+  # Configuration logging
+  LOG_LEVEL: "INFO"
