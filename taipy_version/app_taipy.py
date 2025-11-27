@@ -20,22 +20,42 @@ from watchdog.events import FileSystemEventHandler
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from collections import OrderedDict
+from openai import OpenAI
 
 # Configuration des logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Charger la configuration
-load_dotenv()
+# Charger la configuration depuis le fichier .env
+# Chercher le fichier .env dans le répertoire parent
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path)
+    logger.info(f"Configuration chargée depuis: {env_path}")
+else:
+    load_dotenv()
+    logger.info("Configuration chargée depuis .env par défaut")
 
 class ALEXProConfig:
-    """Configuration ALEX"""
+    """Configuration ALEX - Hybride Ollama (embeddings) + NVIDIA NIM (chat)"""
+    # Configuration Ollama pour les embeddings
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollamaaccel-chatbotaccel.apps.senum.heritage.africa")
-    OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "granite-code:3b")
     OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
+
+    # Configuration NVIDIA NIM pour le chat
+    NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+    NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    NVIDIA_CHAT_MODEL = os.getenv("NVIDIA_CHAT_MODEL", "mistralai/mistral-7b-instruct-v0.3")
+
     CHROMA_PERSIST_DIRECTORY = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db")
     WATCH_DIRECTORY = os.getenv("WATCH_DIRECTORY", "./documents")  # Répertoire à surveiller
     SUPPORTED_EXTENSIONS = ['.txt', '.pdf', '.docx', '.md', '.json', '.csv', '.odt']
+
+    # Vérifier que la clé API est chargée
+    if not NVIDIA_API_KEY:
+        logger.warning("⚠️ NVIDIA_API_KEY non trouvée dans les variables d'environnement!")
+    else:
+        logger.info(f"✅ NVIDIA_API_KEY chargée (longueur: {len(NVIDIA_API_KEY)})")
 
 class DocumentWatcherHandler(FileSystemEventHandler):
     """Gestionnaire de surveillance automatique en arrière-plan"""
@@ -146,7 +166,24 @@ class ALEXProClient:
         self._last_activity = time.time()  # Dernière activité de surveillance
         self.setup_chroma()
         self.setup_watch_directory()
-        
+
+        # Initialiser le client OpenAI pour NVIDIA NIM (chat uniquement)
+        try:
+            if not self.config.NVIDIA_API_KEY:
+                logger.error("❌ NVIDIA_API_KEY est vide! Vérifiez votre fichier .env")
+                self.nvidia_client = None
+            else:
+                self.nvidia_client = OpenAI(
+                    base_url=self.config.NVIDIA_BASE_URL,
+                    api_key=self.config.NVIDIA_API_KEY
+                )
+                logger.info(f"✅ Configuration Hybride initialisée:")
+                logger.info(f"   Chat: NVIDIA NIM ({self.config.NVIDIA_CHAT_MODEL})")
+                logger.info(f"   Embeddings: Ollama ({self.config.OLLAMA_EMBEDDING_MODEL})")
+        except Exception as e:
+            logger.error(f"❌ Erreur initialisation client NVIDIA: {e}")
+            self.nvidia_client = None
+
         # Préparer session HTTP réutilisable et cache d'embeddings
         try:
             self._session = requests.Session()
@@ -653,7 +690,7 @@ class ALEXProClient:
             embeddings = []
             valid_chunks = []
 
-            # Limit number of threads to avoid saturating Ollama
+            # Limit number of threads to avoid saturating Ollama API
             max_workers = min(4, len(chunks)) if len(chunks) > 0 else 1
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -833,35 +870,35 @@ class ALEXProClient:
                         count += 1
 
     def generate_embeddings(self, text: str, max_retries: int = 2) -> List[float]:
-        """Génère des embeddings avec optimisations et retry"""
+        """Génère des embeddings avec Ollama (nomic-embed-text)"""
         for attempt in range(max_retries + 1):
             try:
                 payload = {
                     "model": self.config.OLLAMA_EMBEDDING_MODEL,
                     "prompt": text
                 }
-                
+
                 # Timeout réduit et session réutilisable
                 if not hasattr(self, '_session'):
                     self._session = requests.Session()
                     self._session.headers.update({'Connection': 'keep-alive'})
-                
+
                 # Timeout progressif selon l'essai
                 timeout = 30 + (attempt * 15)  # 30s, 45s, 60s
-                logger.info(f"🔄 Tentative {attempt + 1}/{max_retries + 1} embedding (timeout: {timeout}s)")
-                
+                logger.info(f"🔄 Tentative {attempt + 1}/{max_retries + 1} embedding Ollama (timeout: {timeout}s)")
+
                 response = self._session.post(
                     f"{self.config.OLLAMA_BASE_URL}/api/embeddings",
                     json=payload,
                     timeout=timeout
                 )
-                
+
                 if response.status_code == 200:
                     logger.info(f"✅ Embedding généré avec succès (tentative {attempt + 1})")
                     return response.json()['embedding']
                 else:
                     logger.warning(f"⚠️ Réponse HTTP {response.status_code} (tentative {attempt + 1})")
-                    
+
             except requests.exceptions.Timeout as e:
                 logger.warning(f"⏱️ Timeout tentative {attempt + 1}/{max_retries + 1}: {e}")
                 if attempt < max_retries:
@@ -872,7 +909,7 @@ class ALEXProClient:
                 if attempt < max_retries:
                     time.sleep(2)
                     continue
-        
+
         logger.error(f"💥 Échec génération embedding après {max_retries + 1} tentatives")
         return []
     
@@ -1062,25 +1099,21 @@ Réponds de façon naturelle et professionnelle:
 
 Réponse:"""
 
-            payload = {
-                "model": self.config.OLLAMA_CHAT_MODEL,
-                "prompt": greeting_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.7,  # Plus de créativité pour les salutations
-                    "top_p": 0.9,
-                    "max_tokens": 200
-                }
-            }
-            sess = getattr(self, '_session', None) or requests
-            response = sess.post(
-                f"{self.config.OLLAMA_BASE_URL}/api/generate",
-                json=payload,
-                timeout=30
+            if not self.nvidia_client:
+                return self.generate_greeting_response(message)
+
+            # Utiliser l'API NVIDIA avec streaming
+            completion = self.nvidia_client.chat.completions.create(
+                model=self.config.NVIDIA_CHAT_MODEL,
+                messages=[{"role": "user", "content": greeting_prompt}],
+                temperature=0.7,
+                top_p=0.9,
+                max_tokens=200,
+                stream=False
             )
 
-            if response.status_code == 200:
-                natural_response = response.json().get('response', '')
+            if completion.choices and len(completion.choices) > 0:
+                natural_response = completion.choices[0].message.content
                 logger.info(f"🤖 Réponse naturelle de salutation générée")
                 return natural_response.strip()
             else:
@@ -1162,7 +1195,7 @@ JAMAIS comme cela: "1. Premier 2. Deuxième 3. Troisième"
 RÉPONSE: Basez votre réponse EXCLUSIVEMENT sur le contexte ci-dessus. Répondez en texte plain sans formatage."""
                     
                     # Debug: Logger le prompt et le contexte
-                    logger.info(f"   PROMPT ENVOYÉ À OLLAMA:")
+                    logger.info(f"   PROMPT ENVOYÉ À NVIDIA:")
                     logger.info(f"Contexte: {context[:200]}..." if context else "AUCUN CONTEXTE!")
                     logger.info(f"Prompt: {prompt[:300]}...")
 
@@ -1179,31 +1212,25 @@ RÉPONSE: Basez votre réponse EXCLUSIVEMENT sur le contexte ci-dessus. Réponde
                     # Replace the context in the prompt with the trimmed version
                     prompt = prompt.replace(context, trimmed_context)
 
-                    payload = {
-                        "model": self.config.OLLAMA_CHAT_MODEL,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.1,  # Réduire la créativité
-                            "top_p": 0.9,
-                            "repeat_penalty": 1.1,
-                            "max_tokens": 350
-                        }
-                    }
+                    if not self.nvidia_client:
+                        return "Désolé, je rencontre un problème technique. Veuillez réessayer."
 
-                    sess = getattr(self, '_session', None) or requests
-                    response = sess.post(
-                        f"{self.config.OLLAMA_BASE_URL}/api/generate",
-                        json=payload,
-                        timeout=90  # Timeout augmenté pour les requêtes longues
+                    # Utiliser l'API NVIDIA
+                    completion = self.nvidia_client.chat.completions.create(
+                        model=self.config.NVIDIA_CHAT_MODEL,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.2,
+                        top_p=0.7,
+                        max_tokens=1024,
+                        stream=False
                     )
 
-                    if response.status_code == 200:
-                        ollama_response = response.json().get('response', '')
-                        logger.info(f"   RÉPONSE OLLAMA: {str(ollama_response)[:200]}...")
+                    if completion.choices and len(completion.choices) > 0:
+                        nvidia_response = completion.choices[0].message.content
+                        logger.info(f"   RÉPONSE NVIDIA: {str(nvidia_response)[:200]}...")
 
                         # Post-traitement pour forcer le bon formatage des listes
-                        formatted_response = self.format_lists(ollama_response)
+                        formatted_response = self.format_lists(nvidia_response)
 
                         # Cache the result
                         try:
@@ -1974,9 +2001,19 @@ def chat():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Vérifie la santé de la connexion Ollama"""
+    """Vérifie la santé de la connexion NVIDIA et Ollama"""
+    # Test NVIDIA (chat)
     try:
-        # Test rapide de connexion Ollama
+        if alex_client.nvidia_client:
+            _ = alex_client.nvidia_client.models.list()
+            nvidia_status = "🟢 Connecté"
+        else:
+            nvidia_status = "🔴 Client non initialisé"
+    except:
+        nvidia_status = "🔴 Déconnecté"
+
+    # Test Ollama (embeddings)
+    try:
         test_response = requests.get(
             f"{alex_client.config.OLLAMA_BASE_URL}/api/tags",
             timeout=5
@@ -1984,10 +2021,12 @@ def health_check():
         ollama_status = "🟢 Connecté" if test_response.status_code == 200 else "🟡 Réponse inattendue"
     except:
         ollama_status = "🔴 Déconnecté"
-    
+
     return jsonify({
+        'nvidia_status': nvidia_status,
         'ollama_status': ollama_status,
-        'server_url': alex_client.config.OLLAMA_BASE_URL,
+        'nvidia_url': alex_client.config.NVIDIA_BASE_URL,
+        'ollama_url': alex_client.config.OLLAMA_BASE_URL,
         'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
     })
 
@@ -2289,7 +2328,7 @@ def smart_reindex():
             logger.info(f"✅ Indexation terminée: {len(alex_client.indexed_files)} fichiers au total")
         except Exception as e:
             logger.error(f"Erreur lors de l'indexation: {e}")
-            message = f'Réindexation échouée: Vérifiez la connexion Ollama'
+            message = f'Réindexation échouée: Vérifiez la connexion Ollama (embeddings)'
         
         return jsonify({
             'message': message,
@@ -2409,8 +2448,10 @@ def app_taipy():
     """Lance l'application ALEX"""
     print("   Démarrage d'ALEX...")
     print("=" * 50)
-    print(f"🔗 URL Ollama: {ALEXProConfig.OLLAMA_BASE_URL}")
-    print(f"   Modèle: {ALEXProConfig.OLLAMA_CHAT_MODEL}")
+    print(f"🔗 Configuration Hybride:")
+    print(f"   Chat (NVIDIA NIM): {ALEXProConfig.NVIDIA_CHAT_MODEL}")
+    print(f"   Embeddings (Ollama): {ALEXProConfig.OLLAMA_EMBEDDING_MODEL}")
+    print(f"   Ollama URL: {ALEXProConfig.OLLAMA_BASE_URL}")
     print(f"   Répertoire surveillé: {ALEXProConfig.WATCH_DIRECTORY}")
     print("🌐 Démarrage de l'interface...")
     

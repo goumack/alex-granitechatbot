@@ -19,8 +19,8 @@ spec:
     spec:
       containers:
       - name: alex
-        image: alex:latest
-        imagePullPolicy: IfNotPresent
+        image: image-registry.openshift-image-registry.svc:5000/alex-granitechatbot/alex-optimized:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8505
           name: http
@@ -29,7 +29,17 @@ spec:
         # Variables d'environnement depuis ConfigMap
         envFrom:
         - configMapRef:
-            name: alex-config
+          name: alex-config
+        - secretRef:
+          name: nvidia-secret
+
+        # Variables d'environnement sensibles depuis Secret
+        env:
+        - name: NVIDIA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alex-nvidia-secret
+              key: NVIDIA_API_KEY
         
         # Ressources allouées
         resources:
@@ -88,8 +98,6 @@ spec:
       # Stratégie de redémarrage
       restartPolicy: Always
       
-      # Configuration de sécurité
+      # Configuration de sécurité OpenShift compatible
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1001
-        fsGroup: 1001

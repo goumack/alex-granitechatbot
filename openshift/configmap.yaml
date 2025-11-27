@@ -6,22 +6,32 @@ metadata:
     app: alex
     component: config
 data:
-  # Configuration ALEX
+  # Configuration Ollama pour embeddings
   OLLAMA_BASE_URL: "https://ollamaaccel-chatbotaccel.apps.senum.heritage.africa"
-  OLLAMA_CHAT_MODEL: "granite-code:3b"
   OLLAMA_EMBEDDING_MODEL: "nomic-embed-text"
+
+  # Configuration NVIDIA NIM pour chat
+  NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
+  NVIDIA_CHAT_MODEL: "meta/llama-3.2-3b-instruct"
+
+  # Configuration ChromaDB
   WATCH_DIRECTORY: "./documents"
   CHROMA_PERSIST_DIRECTORY: "./chroma_db"
-  
+
   # Configuration cache (optionnel)
   ALEX_RESPONSE_CACHE_MAX: "500"
   ALEX_RESPONSE_CACHE_TTL: "3600"
   ALEX_PERSIST_CACHE: "true"
   ALEX_CACHE_PATH: "./chroma_db/alex_cache.db"
   ALEX_PERSIST_INTERVAL: "30"
-  
+
+  # Limites
+  MAX_FILE_SIZE_MB: "10"
+  CHUNK_SIZE: "1000"
+  CHUNK_OVERLAP: "200"
+
   # Configuration Flask
   FLASK_ENV: "production"
-  
+
   # Configuration logging
   LOG_LEVEL: "INFO"
