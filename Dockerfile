@@ -21,7 +21,7 @@ WORKDIR /app
 USER 0
 
 # Installer les dépendances système minimales
-RUN dnf install -y python3-devel && \
+RUN dnf install -y python3-devel sqlite sqlite-devel && \
     dnf clean all
 
 # Copier requirements et installer les dépendances Python

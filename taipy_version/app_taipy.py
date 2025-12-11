@@ -2,6 +2,14 @@
 ALEX - Version simplifiée avec interface Flask moderne
 Version entreprise élégante et professionnelle
 """
+# FIX: SQLite version pour chromadb (avant tout import de chromadb)
+import sys
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 import os
 from flask import Flask, render_template_string, request, jsonify
 import requests
