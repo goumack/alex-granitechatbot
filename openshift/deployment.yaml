@@ -25,20 +25,18 @@ spec:
         - containerPort: 8505
           name: http
           protocol: TCP
-        
-        # Variables d'environnement depuis ConfigMap
         envFrom:
         - configMapRef:
-          name: alex-config
+            name: alex-config
         - secretRef:
-          name: nvidia-secret
+            name: nvidia-secret
 
         # Variables d'environnement sensibles depuis Secret
         env:
         - name: NVIDIA_API_KEY
           valueFrom:
             secretKeyRef:
-              name: alex-nvidia-secret
+              name: nvidia-secret
               key: NVIDIA_API_KEY
         
         # Ressources allouées

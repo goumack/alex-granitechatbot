@@ -34,6 +34,7 @@ Thumbs.db
 
 # Documents privés
 backup/
+# Documents privés
 documents/
 
 # Ne pas inclure les fichiers du système parent
