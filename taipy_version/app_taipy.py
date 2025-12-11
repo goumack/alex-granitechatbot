@@ -21,6 +21,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from collections import OrderedDict
 from openai import OpenAI
+import urllib3
+
+# Désactiver les avertissements SSL (certificat expiré sur Ollama)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuration des logs
 logging.basicConfig(level=logging.INFO)
@@ -193,6 +197,8 @@ class ALEXProClient:
             self._session.mount('http://', adapter)
             self._session.mount('https://', adapter)
             self._session.headers.update({'Connection': 'keep-alive', 'User-Agent': 'ALEX-Pro/1.0'})
+            # Ignorer la vérification SSL pour les certificats expirés
+            self._session.verify = False
         except Exception:
             self._session = None
 
@@ -882,6 +888,7 @@ class ALEXProClient:
                 if not hasattr(self, '_session'):
                     self._session = requests.Session()
                     self._session.headers.update({'Connection': 'keep-alive'})
+                    self._session.verify = False  # Désactiver la vérification SSL pour Ollama
 
                 # Timeout progressif selon l'essai
                 timeout = 30 + (attempt * 15)  # 30s, 45s, 60s
@@ -890,7 +897,8 @@ class ALEXProClient:
                 response = self._session.post(
                     f"{self.config.OLLAMA_BASE_URL}/api/embeddings",
                     json=payload,
-                    timeout=timeout
+                    timeout=timeout,
+                    verify=False  # Désactiver la vérification SSL du certificat expiré
                 )
 
                 if response.status_code == 200:
