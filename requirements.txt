@@ -23,3 +23,7 @@ colorlog==6.7.0
 
 # System utilities
 psutil==5.9.5
+
+openai
+PyPDF2
+pdfplumber
