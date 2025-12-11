@@ -888,6 +888,7 @@ class ALEXProClient:
                 if not hasattr(self, '_session'):
                     self._session = requests.Session()
                     self._session.headers.update({'Connection': 'keep-alive'})
+                    self._session.verify = False  # Désactiver la vérification SSL pour Ollama
 
                 # Timeout progressif selon l'essai
                 timeout = 30 + (attempt * 15)  # 30s, 45s, 60s
@@ -896,7 +897,8 @@ class ALEXProClient:
                 response = self._session.post(
                     f"{self.config.OLLAMA_BASE_URL}/api/embeddings",
                     json=payload,
-                    timeout=timeout
+                    timeout=timeout,
+                    verify=False  # Désactiver la vérification SSL du certificat expiré
                 )
 
                 if response.status_code == 200:
