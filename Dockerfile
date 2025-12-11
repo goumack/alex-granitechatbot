@@ -20,20 +20,8 @@ WORKDIR /app
 # L'utilisateur par défaut est déjà non-root dans UBI
 USER 0
 
-# Installer les dépendances système et compiler SQLite 3.35+
-RUN dnf install -y gcc gcc-c++ python3-devel wget tar make && \
-    # Compiler SQLite 3.45.0 pour compatibilité ChromaDB
-    cd /tmp && \
-    wget https://www.sqlite.org/2024/sqlite-autoconf-3450000.tar.gz && \
-    tar xzf sqlite-autoconf-3450000.tar.gz && \
-    cd sqlite-autoconf-3450000 && \
-    ./configure --prefix=/usr/local && \
-    make && make install && \
-    # Mettre à jour le path et les libs
-    echo '/usr/local/lib' > /etc/ld.so.conf.d/sqlite.conf && \
-    ldconfig && \
-    # Nettoyer
-    cd / && rm -rf /tmp/sqlite-autoconf-* && \
+# Installer les dépendances système minimales
+RUN dnf install -y python3-devel && \
     dnf clean all
 
 # Copier requirements et installer les dépendances Python
