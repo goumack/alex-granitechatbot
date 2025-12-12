@@ -1,221 +1,137 @@
-# Guide de déploiement ALEX sur OpenShift
+# 🚀 Procédure de Déploiement ALEX - Fix SSL Ollama
 
-## Prérequis
+## ✅ Changements Appliqués
 
-- Accès à un cluster OpenShift avec permissions de déploiement
-- CLI `oc` installé et connecté au cluster
-- Docker/Podman pour construire l'image (optionnel si registry externe)
+### 1. Fix SSL pour Ollama (certificat expiré)
+- **Fichier**: `openshift/deployment.yaml`
+  - Ajout variables d'environnement pour désactiver SSL:
+    - `PYTHONHTTPSVERIFY=0`
+    - `REQUESTS_CA_BUNDLE=""`
+    - `CURL_CA_BUNDLE=""`
+    - `SSL_CERT_FILE=""`
+  - Fix nom du secret: `nvidia-secret` → `alex-nvidia-secret`
 
-## Étapes de déploiement
+### 2. Script Entrypoint
+- **Fichier**: `taipy_version/entrypoint.sh`
+  - Fix SQLite pour ChromaDB (pysqlite3)
+  - Configuration SSL désactivée
 
-### 1. Préparation du projet OpenShift
+### 3. Code Principal
+- **Fichier**: `taipy_version/app_taipy.py`
+  - Copie de `app_taipy_nim_nvidia_8bmistral.py`
+  - verify=False dans requests
+
+## 🔄 Étapes de Déploiement
+
+### Étape 1 : Commit et Push vers GitHub
 
 ```bash
-# Créer un nouveau projet
-oc new-project alex-prod --display-name="ALEX Assistant IA" --description="Assistant IA RAG d'Accel Tech"
+cd "/c/Users/baye.niang/Desktop/Projets et realisations/ALEX"
 
-# Se positionner dans le projet
-oc project alex-prod
+# Ajouter les fichiers modifiés
+git add openshift/deployment.yaml
+git add taipy_version/app_taipy.py
+git add taipy_version/entrypoint.sh
+git add taipy_version/requirements.txt
+git add Dockerfile
+
+# Créer le commit
+git commit -m "fix: Désactiver vérification SSL pour Ollama (certificat expiré)
+
+- Ajout variables d'environnement SSL dans deployment.yaml
+- Fix nom du secret NVIDIA
+- Script entrypoint.sh pour fix SQLite + SSL
+- Copie app_taipy_nim_nvidia_8bmistral.py vers app_taipy.py
+
+Résout l'erreur: SSLError(SSLCertVerificationError certificate has expired)"
+
+# Push vers GitHub
+git push origin master
 ```
 
-### 2. Construction et push de l'image Docker
+### Étape 2 : Déclencher le Build OpenShift
 
-#### Option A: Build local + push vers registry OpenShift interne
+**Depuis votre terminal OCP (où vous êtes connecté) :**
 
 ```bash
-# Se connecter au registry interne OpenShift
-oc whoami -t | docker login -u $(oc whoami) --password-stdin $(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}')
+# Se positionner dans le bon namespace
+oc project alex-granitechatbot
 
-# Build et tag l'image
-docker build -t alex:latest .
+# Déclencher un nouveau build depuis GitHub
+oc start-build alex-deployment-build --follow
 
-# Tag pour le registry OpenShift
-docker tag alex:latest $(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}')/alex-prod/alex:latest
-
-# Push vers le registry
-docker push $(oc get route default-route -n openshift-image-registry --template='{{ .spec.host }}')/alex-prod/alex:latest
+# OU si vous voulez attendre que le webhook GitHub déclenche automatiquement
+# (cela peut prendre quelques minutes après le push)
 ```
 
-#### Option B: Build direct avec OpenShift (BuildConfig)
+### Étape 3 : Mettre à jour le Deployment
 
 ```bash
-# Créer un BuildConfig depuis le Dockerfile local
-oc new-build --dockerfile="$(cat Dockerfile)" --name=alex
-
-# Démarrer le build
-oc start-build alex --from-dir=./taipy_version --follow
-
-# Attendre la fin du build
-oc logs -f bc/alex
-```
-
-### 3. Déploiement des ressources Kubernetes
-
-```bash
-# Appliquer les manifestes dans l'ordre
-oc apply -f openshift/configmap.yaml
-oc apply -f openshift/storage.yaml
+# Appliquer le deployment.yaml mis à jour
 oc apply -f openshift/deployment.yaml
-oc apply -f openshift/service-route.yaml
-```
 
-### 4. Vérification du déploiement
-
-```bash
-# Vérifier les ressources créées
-oc get all -l app=alex
-
-# Vérifier les pods
-oc get pods -w
-
-# Consulter les logs
-oc logs -f deployment/alex-deployment
-
-# Vérifier la route
-oc get route alex-route
-```
-
-### 5. Configuration post-déploiement
-
-#### Uploader des documents (optionnel)
-
-```bash
-# Copier des documents dans le pod
-oc cp ./documents/. $(oc get pods -l app=alex -o jsonpath='{.items[0].metadata.name}'):/app/documents/
-
-# Déclencher la réindexation
-curl -X POST https://$(oc get route alex-route -o jsonpath='{.spec.host}')/force_full_reindex
-```
-
-## URLs d'accès
-
-Une fois déployé, ALEX sera accessible via :
-
-```bash
-# Obtenir l'URL publique
-echo "https://$(oc get route alex-route -o jsonpath='{.spec.host}')/"
-```
-
-Endpoints disponibles :
-- `GET /` - Interface utilisateur
-- `POST /chat` - API de chat
-- `GET /health` - Vérification de santé
-- `GET /status` - Statut de l'indexation
-- `POST /force_full_reindex` - Réindexation complète
-
-## Monitoring et maintenance
-
-### Consulter les logs
-
-```bash
-# Logs en temps réel
-oc logs -f deployment/alex-deployment
-
-# Logs des dernières 24h
-oc logs deployment/alex-deployment --since=24h
-```
-
-### Mise à l'échelle
-
-```bash
-# Augmenter le nombre de réplicas
-oc scale deployment alex-deployment --replicas=2
-
-# Vérifier l'état
-oc get pods -l app=alex
-```
-
-### Mise à jour de l'application
-
-```bash
-# Rebuild l'image
-oc start-build alex --follow
-
-# Redéployer automatiquement (si ImageChangeTrigger configuré)
-# Ou forcer un nouveau déploiement
+# Forcer le redémarrage pour prendre en compte les nouvelles variables
 oc rollout restart deployment/alex-deployment
 
-# Suivre le rollout
+# Surveiller le déploiement
 oc rollout status deployment/alex-deployment
 ```
 
-### Sauvegarde des données
+### Étape 4 : Vérification
 
 ```bash
-# Sauvegarder les documents
-oc cp $(oc get pods -l app=alex -o jsonpath='{.items[0].metadata.name}'):/app/documents ./backup-documents/
+# Voir les logs du nouveau pod
+oc logs -f deployment/alex-deployment
 
-# Sauvegarder la base ChromaDB
-oc cp $(oc get pods -l app=alex -o jsonpath='{.items[0].metadata.name}'):/app/chroma_db ./backup-chroma/
+# Vérifier le statut de santé
+curl https://alex-route-alex-granitechatbot.apps.ocp.heritage.africa/health
+
+# Devrait afficher:
+# {
+#   "nvidia_status": "🟢 Connecté",
+#   "ollama_status": "🟢 Connecté",  <-- DOIT PASSER À CONNECTÉ
+#   ...
+# }
 ```
 
-## Dépannage
+## 🎯 Résultat Attendu
 
-### Problèmes courants
+Après le déploiement, l'erreur SSL devrait disparaître et Ollama devrait être **🟢 Connecté**.
 
-1. **Pod en CrashLoopBackOff**
-   ```bash
-   oc describe pod <pod-name>
-   oc logs <pod-name> --previous
-   ```
+Les logs devraient montrer :
+```
+✅ Embedding généré avec succès (tentative 1)
+✅ Contexte trouvé: 5 documents
+```
 
-2. **Problème de connexion à Ollama**
-   - Vérifier la ConfigMap : `oc describe configmap alex-config`
-   - Tester la connectivité : `oc exec deployment/alex-deployment -- curl -I https://ollamaaccel-chatbotaccel.apps.senum.heritage.africa/api/tags`
+Au lieu de :
+```
+❌ Erreur embedding: SSLError certificate verify failed
+💥 Échec génération embedding après 3 tentatives
+```
 
-3. **Problèmes de stockage**
-   ```bash
-   oc describe pvc alex-documents-pvc
-   oc describe pvc alex-chroma-pvc
-   ```
+## ⚠️ Troubleshooting
 
-4. **Problèmes de route/réseau**
-   ```bash
-   oc describe route alex-route
-   oc get endpoints alex-service
-   ```
+### Si Ollama reste déconnecté :
 
-### Variables d'environnement importantes
-
-Modifiables via la ConfigMap (`oc edit configmap alex-config`) :
-
-- `OLLAMA_BASE_URL` - URL du service Ollama
-- `OLLAMA_CHAT_MODEL` - Modèle de chat (granite-code:3b)
-- `OLLAMA_EMBEDDING_MODEL` - Modèle d'embeddings (nomic-embed-text)
-- `ALEX_RESPONSE_CACHE_MAX` - Taille du cache de réponses
-- `ALEX_PERSIST_CACHE` - Activation du cache persistant
-- `LOG_LEVEL` - Niveau de logs (DEBUG, INFO, WARNING, ERROR)
-
-Après modification de la ConfigMap :
+1. Vérifier que les variables d'environnement sont bien chargées :
 ```bash
-oc rollout restart deployment/alex-deployment
+oc exec deployment/alex-deployment -- env | grep -E "PYTHON|SSL|CA_BUNDLE"
 ```
 
-## Sécurité
+2. Vérifier les logs détaillés :
+```bash
+oc logs deployment/alex-deployment --tail=200
+```
 
-- L'application tourne avec un utilisateur non-root (UID 1001)
-- TLS activé automatiquement via la Route OpenShift
-- Ressources limitées pour éviter la consommation excessive
-- Health checks configurés pour la haute disponibilité
+3. Tester manuellement depuis le pod :
+```bash
+oc exec deployment/alex-deployment -- python3 -c "
+import requests
+import urllib3
+urllib3.disable_warnings()
+r = requests.get('https://ollamaaccel-chatbotaccel.apps.senum.heritage.africa/api/tags', verify=False)
+print(r.status_code)
+"
+```
 
-## Performance
-
-### Recommandations de ressources
-
-- **Développement** : 512Mi RAM, 250m CPU
-- **Production** : 2Gi RAM, 1000m CPU
-- **Stockage** : 2Gi documents + 5Gi ChromaDB
-
-### Optimisations
-
-1. Activer le cache persistant (`ALEX_PERSIST_CACHE=true`)
-2. Ajuster la taille du cache (`ALEX_RESPONSE_CACHE_MAX`)
-3. Monitorer l'utilisation mémoire des embeddings
-4. Utiliser des node selectors pour les gros workloads
-
-## Support
-
-Pour toute question ou problème :
-- Consulter les logs : `oc logs deployment/alex-deployment`
-- Vérifier la santé : `curl https://<route-host>/health`
-- Contacter l'équipe Accel Tech

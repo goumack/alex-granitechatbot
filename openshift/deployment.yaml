@@ -29,15 +29,25 @@ spec:
         - configMapRef:
             name: alex-config
         - secretRef:
-            name: nvidia-secret
+            name: alex-nvidia-secret
 
         # Variables d'environnement sensibles depuis Secret
         env:
         - name: NVIDIA_API_KEY
           valueFrom:
             secretKeyRef:
-              name: nvidia-secret
+              name: alex-nvidia-secret
               key: NVIDIA_API_KEY
+
+        # Désactiver la vérification SSL pour Ollama (certificat expiré)
+        - name: PYTHONHTTPSVERIFY
+          value: "0"
+        - name: REQUESTS_CA_BUNDLE
+          value: ""
+        - name: CURL_CA_BUNDLE
+          value: ""
+        - name: SSL_CERT_FILE
+          value: ""
         
         # Ressources allouées
         resources:

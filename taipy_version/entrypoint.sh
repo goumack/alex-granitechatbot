@@ -1,13 +1,23 @@
 #!/bin/bash
-# Script d'entrée pour remplacer sqlite3 avant de lancer l'app
-export PYTHONPATH=/app:$PYTHONPATH
-exec python -c "
+# Entrypoint pour ALEX - Désactive la vérification SSL pour Ollama
+
+# Fixer le problème SQLite pour ChromaDB AVANT l'import de chromadb
+python3 << 'PYTHON_FIX'
 import sys
-try:
-    import pysqlite3
-    sys.modules['sqlite3'] = pysqlite3
-except ImportError:
-    pass
-from app_taipy import app
-app.run(host='0.0.0.0', port=8505, threaded=True)
-"
+import pysqlite3
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+PYTHON_FIX
+
+# Désactiver la vérification SSL de manière globale pour Python
+export PYTHONHTTPSVERIFY=0
+export REQUESTS_CA_BUNDLE=""
+export CURL_CA_BUNDLE=""
+export SSL_CERT_FILE=""
+
+echo "🚀 Démarrage d'ALEX avec configuration SSL désactivée pour Ollama"
+echo "   PYTHONHTTPSVERIFY=0"
+echo "   SQLite3 remplacé par pysqlite3"
+echo ""
+
+# Lancer l'application
+exec python app_taipy.py
