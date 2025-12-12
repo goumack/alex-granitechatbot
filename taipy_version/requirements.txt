@@ -1,4 +1,6 @@
 # ALEX Pro - Version Taipy Enterprise
+# IMPORTANT: pysqlite3-binary DOIT être installé AVANT chromadb
+pysqlite3-binary>=0.5.0
 taipy>=3.0.0
 taipy-gui>=3.0.0
 taipy-core>=3.0.0
@@ -13,4 +15,3 @@ openai>=1.0.0
 PyPDF2>=3.0.0
 pdfplumber>=0.7.0
 flask>=2.0.0
-pysqlite3>=0.5.0
