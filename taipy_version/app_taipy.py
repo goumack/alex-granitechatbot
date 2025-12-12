@@ -2,6 +2,11 @@
 ALEX - Version simplifiée avec interface Flask moderne
 Version entreprise élégante et professionnelle
 """
+# FIX SQLITE CRITIQUE : Remplacer sqlite3 par pysqlite3 AVANT d'importer chromadb
+import sys
+__import__('pysqlite3')
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import os
 from flask import Flask, render_template_string, request, jsonify
 import requests
